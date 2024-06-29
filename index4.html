@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Anfrage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 10px;
+        }
+        button {
+            display: block;
+            margin-bottom: 10px;
+        }
+        #htmlOutput {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Ollama Anfrage</h1>
+    <textarea id="inputText" placeholder="Gib hier deine Frage ein..."></textarea>
+    <button onclick="sendRequest()">Anfrage senden</button>
+    <textarea id="outputText" readonly placeholder="Die Antwort erscheint hier..."></textarea>
+    <div id="htmlOutput"></div>
+
+    <script>
+        async function sendRequest() {
+            const inputText = document.getElementById('inputText').value;
+            const outputText = document.getElementById('outputText');
+            const htmlOutput = document.getElementById('htmlOutput');
+            outputText.value = '';  // Clear previous output
+            htmlOutput.innerHTML = ''; // Clear previous HTML output
+
+            const data = {
+                model: 'gemma2:latest',
+ 		temperature: '0.8',
+                prompt: inputText
+            };
+
+            try {
+                const response = await fetch('http://localhost:11434/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let responseData = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop(); // Last line may be incomplete
+
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            try {
+                                const parsedLine = JSON.parse(line);
+                                responseData += parsedLine.response;
+                                outputText.value += parsedLine.response;
+                            } catch (e) {
+                                console.error('Fehler beim Parsen der Zeile:', e, line);
+                            }
+                        }
+                    }
+                }
+
+                // Process any remaining buffer content
+                if (buffer.trim()) {
+                    try {
+                        const parsedLine = JSON.parse(buffer);
+                        responseData += parsedLine.response;
+                        outputText.value += parsedLine.response;
+                    } catch (e) {
+                        console.error('Fehler beim Parsen des Restinhalts:', e, buffer);
+                    }
+                }
+
+                // Extract HTML content after streaming is done
+                const htmlStart = responseData.indexOf('```html');
+                const htmlEnd = responseData.indexOf('```', htmlStart + 6);
+
+                if (htmlStart !== -1 && htmlEnd !== -1) {
+                    const htmlContent = responseData.substring(htmlStart + 6, htmlEnd).trim();
+                    htmlOutput.innerHTML = htmlContent;
+                }
+
+            } catch (error) {
+                outputText.value = 'Fehler: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
+
